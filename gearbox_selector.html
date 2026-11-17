@@ -354,7 +354,8 @@ function errText(e) {
 
 /* ---------- 연결 ---------- */
 const CFG_URL = 'mgdb.url', CFG_KEY = 'mgdb.key';
-const CATALOG = { bucket: 'catalogue', planetary: 'planetary.pdf', hollow: 'hollow.pdf' };
+// 카탈로그: catalogue 버킷의 Korean 폴더. 앞의 경로부터 찾고, 없으면 다음 경로(버킷 맨 위)를 찾음
+const CATALOG = { bucket: 'catalogue', planetary: ['Korean/planetary.pdf', 'planetary.pdf'], hollow: ['Korean/hollow.pdf', 'hollow.pdf'] };
 const DRAWING = { bucket: 'download', exts: { pdf: 'PDF 도면', step: 'STEP 3D', stp: 'STEP 3D' } };
 let sb = null;
 async function fetchAll(table, select = '*', order) {
@@ -787,10 +788,17 @@ $('#pdfIn').addEventListener('click', () => zoomPdf(1.25));
 $('#pdfOut').addEventListener('click', () => zoomPdf(0.8));
 function bindCatalog() {
   document.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', async () => {
-    const file = CATALOG[b.dataset.cat];
+    const files = [].concat(CATALOG[b.dataset.cat]);
     const label = b.textContent.trim();
     b.disabled = true;
-    try { await downloadFromStorage(CATALOG.bucket, file); toast(`${label} 다운로드를 시작했습니다.`); }
+    try {
+      let lastErr;
+      for (const file of files) {
+        try { await downloadFromStorage(CATALOG.bucket, file); toast(`${label} 다운로드를 시작했습니다.`); lastErr = null; break; }
+        catch (e) { lastErr = e; }
+      }
+      if (lastErr) throw new Error(`${CATALOG.bucket} 버킷에서 ${files[0]} 파일을 찾지 못했거나 읽기 권한이 없습니다.`);
+    }
     catch (e) { toast(`카탈로그를 받지 못했습니다. ${errText(e)}`, true); }
     finally { b.disabled = false; }
   }));
@@ -1498,8 +1506,14 @@ function openSettings() {
 $('#btnSettings').addEventListener('click', openSettings);
 
 /* config.js 의 고정 연결 값 (있으면 연결 화면을 건너뜀) */
+// 기본 연결 값 (G+ Supabase 프로젝트). anon 키는 브라우저에 공개되는 조회용 키이고, 데이터는 RLS 정책으로 보호됨.
+// 같은 폴더의 config.js(window.GEARBOX_CONFIG)가 있으면 그 값을 우선 사용
+const DEFAULT_CONFIG = {
+  supabaseUrl: 'https://hnyodpsdfvipbvrsgflb.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhueW9kcHNkZnZpcGJ2cnNnZmxiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyMTYwMjgsImV4cCI6MjA4Njc5MjAyOH0.hb4JUDcxGTyVKCEpUuE5_BrHkPxCKgNbzDjar0-rSSc'
+};
 const FIXED = (() => {
-  const c = window.GEARBOX_CONFIG || {};
+  const c = window.GEARBOX_CONFIG || DEFAULT_CONFIG;
   const url = String(c.supabaseUrl || '').trim().replace(/\/+$/, ''), key = String(c.supabaseAnonKey || '').trim();
   if (!/^https?:\/\/.+/.test(url) || key.length < 20) return null;
   const secret = /sb_secret_/.test(key) || (() => { try { return JSON.parse(atob(key.split('.')[1])).role === 'service_role'; } catch { return false; } })();
